@@ -219,7 +219,7 @@ void loop()
     String sensorData = "";
     sensorData.concat("A:");
     sensorData.concat(autoFlag);
-    sensorData.concat("P:");
+    sensorData.concat(";P:");
     sensorData.concat(frontDistance);
     sensorData.concat(";IR:");
     sensorData.concat(rearObstacle);
@@ -234,5 +234,4 @@ void loop()
     lastPub = millis();
   }
   nh.spinOnce();
-  delay(10);
 }
