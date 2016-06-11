@@ -1,0 +1,85 @@
+ <launch>
+<arg name="tf_map_scanmatch_transform_frame_name" default="scanmatcher_frame"/>
+<arg name="base_frame" default="base_footprint"/>
+<arg name="odom_frame" default="nav"/>
+<arg name="pub_map_odom_transform" default="true"/>
+<arg name="scan_subscriber_queue_size" default="5"/>
+<arg name="scan_topic" default="scan"/>
+<arg name="map_size" default="4048"/>
+
+  <node name="rplidarNode"          pkg="rplidar_ros"  type="rplidarNode" output="screen">
+  <param name="serial_port"         type="string" value="/dev/ttyUSB1"/>  
+  <param name="serial_baudrate"     type="int"    value="115200"/>
+  <param name="frame_id"            type="string" value="laser"/>
+  <param name="inverted"            type="bool"   value="false"/>
+  <param name="angle_compensate"    type="bool"   value="true"/>
+  </node>
+
+<node pkg="hector_mapping" type="hector_mapping" name="hector_mapping" output="screen"> 
+
+    <!-- Frame names -->
+<param name="map_frame" value="/map"/>
+<param name="base_frame" value="/base_frame"/>
+<param name="odom_frame" value="/base_frame"/>
+<!-- Tf use -->
+<param name="use_tf_scan_transformation" value="true"/>
+<param name="use_tf_pose_start_estimate" value="false"/>
+<param name="pub_map_odom_transform" value="true"/>
+
+
+    <!-- Map size / start point -->
+    <param name="map_resolution" value="0.06"/>
+    <param name="map_size" value="$(arg map_size)"/>
+    <param name="map_start_x" value="0.5"/>
+    <param name="map_start_y" value="0.5" />
+    <param name="map_multi_res_levels" value="3" />
+
+    <!-- Map update parameters -->
+    <param name="update_factor_free" value="0.4"/>
+    <param name="update_factor_occupied" value="0.9" />    
+    <param name="map_update_distance_thresh" value="0.4"/>
+    <param name="map_update_angle_thresh" value="0.45" />
+    <param name="laser_z_min_value" value = "-1.0" />
+    <param name="laser_z_max_value" value = "1.0" />
+
+    <!-- Advertising config --> 
+    <param name="advertise_map_service" value="true"/>
+
+    <param name="scan_subscriber_queue_size" value="$(arg scan_subscriber_queue_size)"/>
+    <param name="scan_topic" value="$(arg scan_topic)"/>
+
+    <!-- Debug parameters -->
+
+      <param name="output_timing" value="false"/>
+      <param name="pub_drawings" value="false"/>
+      <param name="pub_debug_output" value="false"/>
+</node>
+
+<!-- start path helper -->
+<node pkg="hector_trajectory_server" type="hector_trajectory_server" name="hector_trajectory_server" output="screen">
+    <param name="target_frame_name" type="string" value="/map" />
+    <param name="source_frame_name" type="string" value="/base_frame" />
+    <param name="trajectory_update_rate" type="double" value="4" />
+    <param name="trajectory_publish_rate" type="double" value="0.25" />
+</node>
+
+<!-- start map saver -->
+<node pkg="hector_geotiff" type="geotiff_node" name="hector_geotiff_node" output="screen" launch-prefix="nice -n 15">
+    <remap from="map" to="/dynamic_map" />
+    <param name="map_file_path" type="string" value="/mnt/sdcard/output/maps" />
+    <param name="map_file_base_name" type="string" value="hector_slam_map" />
+    <param name="geotiff_save_period" type="double" value="60" />
+    <param name="draw_background_checkerboard" type="bool" value="true" />
+    <param name="draw_free_space_grid" type="bool" value="true" />
+
+    <param name="plugins" type="string" value="hector_geotiff_plugins/TrajectoryMapWriter" />
+</node>
+
+<node pkg="tf" type="static_transform_publisher" name="map_nav_broadcaster" args="0 0 0 0 0 0 /base_frame /laser 100"/>
+<!-- this publishes the transform between the base and laser -->
+
+<!--<node pkg="tf" type="static_transform_publisher" name="base_laser_broadcaster" args="0.0 0.0 0.0 0.0 0.0 0.0 /base_frame /laser_frame 40"/>-->
+  <node pkg="rosserial_python" type="serial_node.py" name="serial_node">
+    <param name="port" value="/dev/ttyUSB0"/>
+  </node>
+</launch>
