@@ -22,7 +22,7 @@ bool autoFlag = false;
 int absLeftSpeed = 0;
 int absRightSpeed = 0;
 
-
+long lastMotorCtrlTime = 0;
 String lastMotorCtrlMsg = "";
 void onMotorCtrlMsg( const std_msgs::String& msg) {
   if (String("auto") == String(msg.data)) {
@@ -37,6 +37,7 @@ void onMotorCtrlMsg( const std_msgs::String& msg) {
     lastMotorCtrlMsg.concat(msg.data);
     return;
   }
+  lastMotorCtrlTime = millis();
   autoFlag = false;
   int i = 0;
   int leftSpeed = msg.data[i++] - 48;
@@ -155,6 +156,11 @@ void setup()
 long lastPub = 0;
 void loop()
 {
+  if (millis() - lastMotorCtrlTime > 2000) {
+    MOTOR.setStop1();
+    MOTOR.setStop2();
+  }
+
   int frontDistance = getFrontDistance();
   bool rearObstacle = checkRearObstacle();
 
@@ -192,7 +198,7 @@ void loop()
     }
   }
 
-  if ((absRightSpeed > 0 || absLeftSpeed > 0) && frontDistance > 0 && frontDistance < 20) {
+  if ((absRightSpeed > 0 || absLeftSpeed > 0) && frontDistance > 0 && frontDistance < 5) {
     MOTOR.setStop1();
     MOTOR.setStop2();
 
