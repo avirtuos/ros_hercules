@@ -71,9 +71,9 @@ At some point I decided to try and use the amazing Pro Micro (ATmega32u4) to pro
 
 If you plan to do anything but trival activities (Whats direction is the closest obstacle), don't bother doing it on an Arduino. I was originally hoping to use the Arduino to reduce the number of USB ports needed by the Jetson TX1 but found that the ATmega32u4 could only read:
 
-~110 samples a second from the RPLidar when also publishing the samples via ROS Serial for Arduino.
-~900 samples a second from the RPLidar with minimal processing (min direction).
-~1500 samples a second from the RPLidar with minimal processing (min direction) and <a href='https://github.com/robopeak/rplidar_arduino/pull/7'>my RPLidar perfomance patch</a>
+* ~110 samples a second from the RPLidar when also publishing the samples via ROS Serial for Arduino.
+* ~900 samples a second from the RPLidar with minimal processing (min direction).
+* ~1500 samples a second from the RPLidar with minimal processing (min direction) and <a href='https://github.com/robopeak/rplidar_arduino/pull/7'>my RPLidar perfomance patch</a>
 
 * RPLidar is capable of 2000 samples a second.
 
