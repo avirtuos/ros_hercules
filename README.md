@@ -11,8 +11,105 @@ If you find this interesting, my team at Amazon's NYC headquarters is hiring all
 
 # Parts List
 
+The core of this robotics platform is based around NVidia's Jetson TX1 Single Chip Computer, an RPLidar 360 Laser Scanner, and a LynxMotion 4WD Rover. You should feel free to substitude similar components if you wish but I've specifically selected the Jetson TX1 because of its lower power usage, broad support for <a href='http://www.ros.org/'>ROS (Robot Operating System)</a>, and the 256 Cuda Compute Cores on its embedded graphics processor.
+
+* <a href="http://www.nvidia.com/object/jetson-tx1-dev-kit.html">Nvidia Jetson TX1 Module + Dev Kit</a> ($300 after educational discount)
+* <a href="http://www.connecttech.com/sub/products/ASG003.asp">Orbitty Carier Board ~$148</a>
+* <a href="https://www.amazon.com/gp/product/B00LGC2CTI/ref=oh_aui_detailpage_o05_s00?ie=UTF8&psc=1">RPLidar 360 ~ $440</a>
+* <a href="http://www.robotshop.com/en/4wd1-robot-aluminum-kit.html">Lynxmotion Aluminum A4WD1 Rover Kit ~ $220</a>
+* <a href="http://www.robotshop.com/en/lynxmotion-qme-01-quadrature-encoder.html">2 x Lynxmotion Quadrature Motor Encoder (with Cable) ~ $30</a>
+* <a href="http://www.robotshop.com/en/sabertooth-dual-regenerative-motor-driver.html">Sabertooth Dual 12A 6V-24V Regenerative Motor Driver ~ $80</a>
+* <a href="https://www.amazon.com/gp/product/B019SXN84E/ref=oh_aui_detailpage_o01_s00?ie=UTF8&psc=1">Arduino Pro Micro ~ $8
+* <a href="https://www.amazon.com/gp/product/B018U19MN6/ref=oh_aui_detailpage_o02_s00?ie=UTF8&psc=1">LM317 Step Down Converter  ~ $2</a>
+* <a href="https://www.amazon.com/gp/product/B00SL0U3RG/ref=oh_aui_detailpage_o02_s00?ie=UTF8&psc=1">2 x USB Seriat UART ~ $5.44</a>
+* <a href="https://www.amazon.com/gp/product/B00W77C2FA/ref=oh_aui_detailpage_o05_s00?ie=UTF8&psc=1">16 GB Micro SdCard ~ $9</a>
+* <a href="https://www.amazon.com/gp/product/B00MU44JS8/ref=oh_aui_detailpage_o01_s00?ie=UTF8&psc=1">Tamiya Connectors ~ $10</a>
+* <a href="https://www.amazon.com/gp/product/B00WEBJRE8/ref=oh_aui_detailpage_o04_s01?ie=UTF8&psc=1">LM2596 Voltage and Current Regulator ~ $18</a>
+* <a href="https://www.amazon.com/gp/product/B0064SHG0Y/ref=oh_aui_detailpage_o04_s01?ie=UTF8&psc=1">Low Voltage Monitor for 2S to 8S LiPO Batteries ~$10</a>
+* <a href="https://www.amazon.com/gp/product/B00NAB8VQG/ref=oh_aui_detailpage_o01_s01?ie=UTF8&psc=1">Set of 20 4-Pin Plug Male and Female Wire Cable Connectors ~ $7</a>
+* <a href="https://www.amazon.com/gp/product/B00MMWDYI4/ref=oh_aui_detailpage_o02_s00?ie=UTF8&psc=1">Assorted Spacers and Stand Offs</a>
+ 
 # Software List
+
+* Comming Soon!
 
 # Step By Step Instructions
 
-## Step 1: Installing ROS
+* Comming Soon!
+
+## Step 1: Jetson TX1 Setup
+
+* Comming Soon!
+
+## Step 2: RPLidar Setup
+
+* Comming Soon!
+
+Includes building some Jetson TX1 kernel modules for our USB UART, which were oddly excluded from the Jetson default build but already present in the kernel source!
+
+## Step 3: Lynxmotion Platform Setup
+
+* Comming Soon!
+
+
+# Some Lessons Learned
+
+
+## SoftSerial on Leonardo, Pro Micro, ATmega32u4
+
+SoftSerial is notoriously difficult to get to work with any ATmega32u4 based Arduino due to an error in the interrupt table. The key is to ensure you are using pin 9 for RX, you can use pretty much any pin you like for TX. 
+
+If you don't use pin 9 for RX, what you'll see is that SoftSerial.read() will always return -1 even though there is indeed data to be read. This is because the interupts are not properly set on many (maybe all) ATmega32u4 based Arduinos. I confirmed this with my own set of Pro Micro(s) and a Leonardo. 
+
+In fact I spent several hours troubleshooting why I could not get any data from RPLidar 360 using their own Arduino Library when using SoftSerial but it worked when using HardwareSerial. Thankfully I happened to have <a href='https://www.amazon.com/Saleae-8-Channel-Logic-Analyzer/dp/B018RE3O7G/'>a Logic analyzer</a> handy and confirmed that my TX was being sent and the RPLidar was indeed responding on my RX line but SoftSerial could not see it.
+
+I didn't fully undertand the difference between interrupts and the variety of pin change interrupt used by SoftSerial until after my several hours of troubleshooting. You can find more on differences <a href='http://www.geertlangereis.nl/Electronics/Pin_Change_Interrupts/PinChange_en.html'>Here</a>.
+
+## RPLidar 360 Arduino Performance
+
+At some point I decided to try and use the amazing Pro Micro (ATmega32u4) to process laser scan data from the RPLidar. After a bit of soldering, and the above SoftSerial nightmare, and the below ATmega32u4 bricking nightmare... I was finally able to read laser data from the arduino using a software serial port. Here is what I learned:
+
+If you plan to do anything but trival activities (Whats direction is the closest obstacle), don't bother doing it on an Arduino. I was originally hoping to use the Arduino to reduce the number of USB ports needed by the Jetson TX1 but found that the ATmega32u4 could only read:
+
+* ~110 samples a second from the RPLidar when also publishing the samples via ROS Serial for Arduino.
+* ~900 samples a second from the RPLidar with minimal processing (min direction).
+* ~1500 samples a second from the RPLidar with minimal processing (min direction) and <a href='https://github.com/robopeak/rplidar_arduino/pull/7'>my RPLidar perfomance patch</a>
+
+* RPLidar is capable of 2000 samples a second.
+
+This was rather disappointing but reaffirmed my choice of using the Jetson TX1 because even while processing 2,000 samples a second from the RPLidar it is able to run a hector_mapping node, save generated maps, publish to a remote RViz instance, and run my custom robot software.
+
+
+## Bricking ATmega32u4 Is Way Too Easy!
+
+If you plan on using an Arduino Leonardo, the Pro Micro, or anything based on the ATmega32u4 you should be careful _not_ to upload a sketch that causes a reset loop. This is because the ATmega32u4 actually uses a compile time injected piece of code that allows for programming of the board. You WILL brick your arduino if you submit a sketch like the one below.
+
+```c++
+
+void setup(){
+	
+}
+
+void loop(){
+	Print* myPrinter = null;
+	pointer->->print("This call triggers an NPE and reset of the board because myPrinter is null!");
+}
+
+```
+
+I bricked three ATmega32u4s before realizing what was going on, oddly there is VERY little online about how easy it is to brick them. There are some tricks to try and recover from this but in the above example none of them will work because the board resets so quickly that your Operating Systems's USB port will not be able to recognize the device. Your only option at that point is to program the chip directly, assuming your board has the appropriate pinouts... unlike the Pro Micro.
+
+So, as a safety I recommend always adding a short sleep to the setup() method so you ensure your Operating System will have time to recognize the device and allow you to upload a corrected sketch.
+
+```c++
+
+void setup(){
+	delay(4000);	//sufficient for USB to be detected and sketch upload to begin.
+}
+
+void loop(){
+	Print* myPrinter = null;
+	pointer->->print("This call triggers an NPE and reset of the board because myPrinter is null!");
+}
+
+```
