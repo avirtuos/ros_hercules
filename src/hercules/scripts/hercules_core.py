@@ -140,18 +140,31 @@ class MotorController:
     wayPointTimeout = 0
     odom = OdometryPub()
 
+    oneRotation = 6000.0
+    circumference = 39.2399
+
     def __init__(self):
         self.rosPub = rospy.Publisher('/hercules/motorCtrl', String, queue_size=10)
 
     def updateOdometry(self, leftEncoder, rightEncoder):
+        realLeftEncoder = ((leftEncoder/self.oneRotation) * self.circumference)
+        realRightEncoder = ((rightEncoder/self.oneRotation) * self.circumference)
+
+        if(leftEncoder != 0 or rightEncoder != 0):
+            rospy.loginfo('updateOdometry: CR: ' +  str(self.rightEncoder)  + ' CL: ' + str(self.leftEncoder) + ' NR: ' +  str(rightEncoder)  + ' NL: ' + str(leftEncoder) + ' RR: ' +  str(realRightEncoder)  + ' RL: ' + str(realLeftEncoder))
+
+
+        self.leftEncoderDelta = realLeftEncoder
+        self.rightEncoderDelta = realRightEncoder
+        self.leftEncoder = self.leftEncoder  + realLeftEncoder
+        self.rightEncoder = self.rightEncoder + realRightEncoder
+
         if(self.isHalted):
             return
-        leftEncoderDelta = self.leftEncoder - leftEncoder
-        rightEncoderDelta = self.rightEncoder - rightEncoder
-        self.leftEncoder = self.leftEncoder  + leftEncoder
-        self.rightEncoder = self.rightEncoder + rightEncoder
+
         #self.odom.update(leftEncoder, rightEncoder)
         self.evaluateWayPoint()
+
         self.handleAccelerationLeft(self.leftAccel)
         self.handleAccelerationRight(self.rightAccel)
         self.publish()
@@ -162,13 +175,17 @@ class MotorController:
 
         if(self.requiredRight <= self.rightEncoder and self.requiredLeft <= self.leftEncoder):
             rospy.loginfo('evaluateWayPoint: waypoint completed')
+            self.rightAccel = 0
+            self.leftAccel = 0
             self.owner = ""
             self.stop()
         
         if(self.leftEncoderDelta > self.maxSpeed):
+            rospy.loginfo('evaluateWayPoint: Slowing down left: ' + str(self.leftEncoderDelta) + ' vs max: ' + str(self.maxSpeed))
             self.leftMotor = self.leftMotor - 1
 
         if(self.rightEncoderDelta > self.maxSpeed):
+            rospy.loginfo('evaluateWayPoint: Slowing down right: ' + str(self.rightEncoderDelta) + ' vs max: ' + str(self.maxSpeed))
             self.rightMotor = self.rightMotor - 1
 
     def setWayPoint(self, owner, requiredDistance):
@@ -177,7 +194,7 @@ class MotorController:
             self.requiredRight = 0
             self.requiredLeft = 0
         elif(self.owner == owner):
-            rospy.loginfo('setWayPoint: Owner is me! Left: ' + str(self.requiredLeft) + ' Right: ' + str(self.requiredLeft))
+            rospy.loginfo('setWayPoint: Owner is me (' + owner + ')! Left: ' + str(self.requiredLeft) + ' Right: ' + str(self.requiredLeft) + ' Actual -> Left: ' + str(self.leftEncoder) + ' Right: ' + str(self.rightEncoder))
             return True
         elif(self.requiredRight > self.rightEncoder or self.requiredLeft > self.leftEncoder):
             rospy.loginfo('setWayPoint(' + owner +'): Existing waypoint exists! Left: ' + str(self.requiredLeft) + ' Right: ' + str(self.requiredLeft))
@@ -197,7 +214,7 @@ class MotorController:
             self.leftMotor = 0
             
         if(self.leftEncoderDelta < self.maxSpeed):
-            self.leftMotor += 0.6 * direction
+            self.leftMotor += 2 * direction
 
     def handleAccelerationRight(self, direction):
         if(self.rightMotor < 1 and direction > 1):
@@ -206,7 +223,7 @@ class MotorController:
             self.rightMotor = 0
 
         if(self.rightEncoderDelta < self.maxSpeed):
-            self.rightMotor += 0.6 * direction
+            self.rightMotor += 2 * direction
 
     def forward(self, requiredDistance):
         if(self.isHalted):
@@ -271,22 +288,35 @@ class MotorController:
         self.publish()
 
     def publish(self):
+        leftMotorSpeedCmd = int(ceil(self.leftMotor)) + 192
+        if(leftMotorSpeedCmd < 128):
+            leftMotorSpeedCmd = 128
+        elif(leftMotorSpeedCmd > 255):
+            leftMotorSpeedCmd = 255
+
+        rightMotorSpeedCmd = int(ceil(self.rightMotor)) + 64
+        if(rightMotorSpeedCmd < 1):
+            rightMotorSpeedCmd = 1
+        elif(rightMotorSpeedCmd > 127):
+            rightMotorSpeedCmd = 127
+
+        
         leftMotorDirCmd = 'F' if self.leftMotor > 0 else 'R'
-        leftMotorSpeedCmd = chr(abs(int(ceil(self.leftMotor))) + 48)
         rightMotorDirCmd = 'F' if self.rightMotor > 0 else 'R'
-        rightMotorSpeedCmd = chr(abs(int(ceil(self.rightMotor))) + 48)
-        self.lastPublish['leftMotorDir'] = leftMotorDirCmd
-        self.lastPublish['leftMotorSpeed'] = abs(self.leftMotor) + 48
-        self.lastPublish['rightMotorDir'] = rightMotorDirCmd
-        self.lastPublish['rightMotorSpeed'] = abs(self.rightMotor) + 48
+
+        self.lastPublish['leftMotorSpeed'] = leftMotorSpeedCmd
+        self.lastPublish['rightMotorSpeed'] = rightMotorSpeedCmd
         self.lastPublish['requiredLeft'] = self.requiredLeft
         self.lastPublish['requiredRight'] = self.requiredRight
         self.lastPublish['leftEncoder'] = self.leftEncoder
         self.lastPublish['rightEncoder'] = self.rightEncoder
         self.lastPublish['wayPointOwner'] = self.owner
-        if(leftMotorSpeedCmd != "0" or rightMotorSpeedCmd != "0"):
-            rospy.loginfo('MotorControlCmd: ' + leftMotorSpeedCmd + leftMotorDirCmd + rightMotorSpeedCmd + rightMotorDirCmd)
-        self.rosPub.publish(leftMotorSpeedCmd + leftMotorDirCmd + rightMotorSpeedCmd + rightMotorDirCmd)
+
+        if(leftMotorSpeedCmd != 192 or rightMotorSpeedCmd != 64):
+            rospy.loginfo('MotorControlCmd: L:' + str(self.leftMotor) + ' R:' + str(self.rightMotor))
+            rospy.loginfo('MotorControlCmd: RL:' + str(leftMotorSpeedCmd) + ' RR:' + str(rightMotorSpeedCmd))
+
+        self.rosPub.publish(chr(leftMotorSpeedCmd)  + chr(rightMotorSpeedCmd))
 
     def getState(self):
         return self.lastPublish
@@ -396,14 +426,14 @@ def scanCb(msg):
         ray = ray * 100
 
         #35 is a good range for front
-        if( count < 90 and count > 45):
+        if( count < 300 and count > 230):
             frontCount += 1
             frontSum += ray
             if( lidarData['frontMin'] == -1 or lidarData['frontMin'] > ray):
                 lidarData['frontMin'] = ray
 
         #55 is a good range for rear
-        if( count > 200 and count < 220):
+        if( count > 130 and count < 50):
             rearCount += 1
             rearSum += ray
             if( lidarData['rearMin'] == -1 or lidarData['rearMin'] > ray * 1.2):
@@ -417,31 +447,34 @@ def scanCb(msg):
             lidarData['minRange'] = ray
             lidarData['minRangeAngle'] = count
 
-
     lidarData['frontAvg'] = (frontSum/frontCount) if (frontCount > 0)  else -1
     lidarData['rearAvg'] = (rearSum/rearCount) if (rearCount > 0)  else -1 
     lidarData['discarded'] = discards
     outStr = `lidarData`
-    #rospy.loginfo('LaserScan: ' + outStr)
+    #if(lidarData['minRange'] < 25):
+    #    rospy.loginfo('LaserScan: ' + outStr)
 
-    if(lidarData['minRange'] < 25 and (lidarData['minRangeAngle'] > 220 or lidarData['minRangeAngle'] < 45)):
-        rospy.loginfo("Turning left to avoid proxity on right.")
-        motorController.turnLeft()
-    elif(lidarData['minRange'] < 25 and (lidarData['minRangeAngle'] > 90 and lidarData['minRangeAngle'] < 200)):
-        rospy.loginfo("Turning right to avoid proxity on left.")
-        motorController.turnRight()
-    elif( lidarData['frontMin'] > 35):
+    if( lidarData['frontMin'] > 35):
         motorController.forward(ceil(lidarData['frontMin'] - 30))
+    elif ( lidarData['frontMin'] <= 25):
+        rospy.loginfo("Reversing to avoid forward obstacle.")
+        if(lidarData['rearMin'] == -1):
+            motorController.reverse(50)
+        else:
+            motorController.reverse(min(lidarData['rearMin'], 50))
     elif ( lidarData['frontMin'] <= 35):
-        if(lidarData['maxRangeAngle'] > 220 or lidarData['maxRangeAngle'] < 45):
+        if(lidarData['maxRangeAngle'] > 130 and lidarData['maxRangeAngle'] < 240):
             rospy.loginfo("Turning right to avoid forward obstacle.")
             motorController.turnRight()
         else:
             rospy.loginfo("Turning left to avoid forward obstacle.")
             motorController.turnLeft()
-    elif ( lidarData['frontMin'] <= 25):
-        rospy.loginfo("Reversing to avoid forward obstacle.")
-        motorController.reverse(min(lidarData['rearMin'], 50))
+    elif(lidarData['minRange'] < 35 and (lidarData['minRangeAngle'] > 130 and lidarData['minRangeAngle'] < 240)):
+        rospy.loginfo("Turning left to avoid proxity on right.")
+        motorController.turnLeft()
+    elif(lidarData['minRange'] < 35 and (lidarData['minRangeAngle'] > 300 or lidarData['minRangeAngle'] < 30)):
+        rospy.loginfo("Turning right to avoid proxity on left.")
+        motorController.turnRight()
             
 def roverCb(msg):
     for nextSensor in msg.data.split(';',6):
@@ -449,7 +482,7 @@ def roverCb(msg):
         if(len(values) == 2):
             sensorData[values[0]] = values[1]
 
-    motorController.updateOdometry(int(sensorData['LE']), int(sensorData['RE']))
+    motorController.updateOdometry(abs(int(sensorData['LE'])), abs(int(sensorData['RE'])))
     #A:0;P:31;IR:0;RE:0;LE:0;LM:
 
 def hercules_core():

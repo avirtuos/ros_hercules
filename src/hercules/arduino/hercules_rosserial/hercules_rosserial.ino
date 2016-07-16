@@ -1,244 +1,189 @@
-#include <QueueList.h>
-#include <seeed_pwm.h>
-#include <ArduinoHardware.h>
+
+#define USE_USBCON
+//The above flag is required only for Arduino Micro / Pro Micro based on Leonardo
+
+#include <SoftwareSerial.h>
+
 #include <ros.h>
 
 #include <std_msgs/String.h>
-#include <ros.h>
-#include <NewPing.h>
-#include <motordriver_4wd.h>
+/* read a rotary encoder with interrupts
+   Encoder hooked up with common to GROUND,
+   rightEncoderPinA to pin 2, rightEncoderPinB to pin 4 (or pin 3 see below)
+   it doesn't matter which encoder pin you use for A or B
+
+   uses Arduino pullups on A & B channel outputs
+   turning on the pullups saves having to hook up resistors
+   to the A & B channel outputs
+
+*/
+
+#define rightEncoderPinA  3
+#define rightEncoderPinB  4
+
+#define leftEncoderPinA  7
+#define leftEncoderPinB  6
+
+#define ONE_ROTATION  6000.0
+#define CIRCUMFERENCE 15.4488
+
+#define RIGHT_MOTOR_MIN 1
+#define RIGHT_MOTOR_STOP 64
+#define RIGHT_MOTOR_MAX 127
+
+#define LEFT_MOTOR_MIN 128
+#define LEFT_MOTOR_STOP 192
+#define LEFT_MOTOR_MAX 255
+
+volatile long rightEncoderPos = 0;  //MOTOR 1  - ( 1 - reverse - 64 - forward - 127)
+volatile long leftEncoderPos = 0;   //MOTOR 2 - ( 128 - reverse - 192 - forward - 255)
+
+// software serial #2: RX = digital pin 8, TX = digital pin 9
+// on the Mega, use other pins instead, since 8 and 9 don't work on the Mega
+SoftwareSerial saberTooth(9, 8);
+
 
 ros::NodeHandle  nh;
 
-int cStrLen(const char* cstr) {
-  int counter = 0;
-  while (cstr[counter] != '\0') {
-    counter++;
-  }
-  return counter;
-}
 
-bool autoFlag = false;
-int absLeftSpeed = 0;
-int absRightSpeed = 0;
 
 long lastMotorCtrlTime = 0;
-String lastMotorCtrlMsg = "";
 void onMotorCtrlMsg( const std_msgs::String& msg) {
-  if (String("auto") == String(msg.data)) {
-    autoFlag = true;
-    return;
-  } else if (cStrLen(msg.data) < 4) {
-    autoFlag = false;
-    MOTOR.setStop1();
-    MOTOR.setStop2();
-    lastMotorCtrlMsg = "Too Small";
-    lastMotorCtrlMsg.concat(sizeof(msg.data));
-    lastMotorCtrlMsg.concat(msg.data);
+  String statusMsg = "OK";
+
+  if (cStrLen(msg.data) < 2) {
+    motorStop();
+    statusMsg = "Too Small";
+
+    publishSensorData(statusMsg);
     return;
   }
+
+  byte left = msg.data[0];
+  byte right = msg.data[1];
+
+  if ((int)left < LEFT_MOTOR_MIN || left > LEFT_MOTOR_MAX) {
+    motorStop();
+    statusMsg = "Left Motor Error";
+    publishSensorData(statusMsg);
+    return;
+  } else if ((int)right < RIGHT_MOTOR_MIN || right > RIGHT_MOTOR_MAX) {
+    motorStop();
+    statusMsg = "Right Motor Error";
+    publishSensorData(statusMsg);
+    return;
+  }
+
   lastMotorCtrlTime = millis();
-  autoFlag = false;
-  int i = 0;
-  int leftSpeed = msg.data[i++] - 48;
-  unsigned char leftDir = ('F' == msg.data[i++]) ? DIRF : DIRR;
-  int rightSpeed = msg.data[i++] - 48;
-  unsigned char rightDir = 1 - (('F' == msg.data[i++]) ? DIRF : DIRR);
+  unsigned char leftDir = (left < LEFT_MOTOR_STOP) ? 'R' : 'F';
+  unsigned char rightDir = (right < RIGHT_MOTOR_STOP) ? 'R' : 'F';
 
-  absLeftSpeed = leftSpeed * (('F' == msg.data[1]) ? 1 : -1);
-  absRightSpeed = rightSpeed * (('F' == msg.data[3]) ? 1 : -1);
+  publishSensorData(statusMsg);
 
-  if (leftSpeed == 0) {
-    MOTOR.setStop1();
-  } else {
-    MOTOR.setSpeedDir1(leftSpeed, leftDir);
-  }
+  motorSpeed(left, right);
 
-  if (rightSpeed == 0) {
-    MOTOR.setStop2();
-  } else {
-    MOTOR.setSpeedDir2(rightSpeed, rightDir);
-  }
-
-  lastMotorCtrlMsg = "";
-  lastMotorCtrlMsg.concat("L:"); lastMotorCtrlMsg.concat(leftSpeed);
-  lastMotorCtrlMsg.concat(" LD:"); lastMotorCtrlMsg.concat(msg.data[1]);
-  lastMotorCtrlMsg.concat(" R:"); lastMotorCtrlMsg.concat(rightSpeed);
-  lastMotorCtrlMsg.concat(" RD:"); lastMotorCtrlMsg.concat(msg.data[3]);
-  lastMotorCtrlMsg.concat(" RAW:"); lastMotorCtrlMsg.concat(msg.data);
 }
-
-ros::Subscriber<std_msgs::String> sub("/hercules/motorCtrl", onMotorCtrlMsg );
 
 std_msgs::String sensorMsg;
 ros::Publisher sensorTopic("/hercules/sensors", &sensorMsg);
 
-
-/**
-      Sensors
-  Soft Serial
-
-  RX: A2
-  TX: A3 (blue)
-
-  Encoders
-  D2
-  D3
-
-  IR
-  A0
-  A1
-
-  Echo D11, D12
-
-  RX, TX wifi
-*/
-//35 encoder ticks = 1 revolution = 267 mm
-//Motor 1  - Left - encoder interupt 0
-//Motor 2 - right - encoder interupt 1
-#define TRIGGER_PIN  11  // Arduino pin tied to trigger pin on the ultrasonic sensor.
-#define ECHO_PIN     12  // Arduino pin tied to echo pin on the ultrasonic sensor.
-#define MAX_DISTANCE 200 // Maximum distance we want to ping for (in centimeters). Maximum sensor distance is rated at 400-500cm.
-
-NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
-
-int right_encoder_count = 0;
-int left_encoder_count = 0;
-
-void right_encoder() {
-  right_encoder_count++;
-}
-
-void left_encoder() {
-  left_encoder_count++;
+void publishSensorData(String msg) {
+  String sensorData = "";
+  sensorData.concat("RE:");
+  sensorData.concat(getRightEncoder());
+  sensorData.concat(";LE:");
+  sensorData.concat(getLeftEncoder());
+  sensorData.concat(";LM:");
+  sensorData.concat(msg);
+  sensorMsg.data = sensorData.c_str();
+  sensorTopic.publish( &sensorMsg );
 }
 
 int getRightEncoder() {
-  detachInterrupt(1);
-  int returnValue = right_encoder_count;
-  right_encoder_count = 0;
-  attachInterrupt(1, right_encoder, RISING);
-  return ceil((returnValue / 35.0) * 26.7);
+  long localEncoder = rightEncoderPos;
+  rightEncoderPos = 0;
+
+  return ceil((localEncoder / ONE_ROTATION) * CIRCUMFERENCE);
 }
 
 int getLeftEncoder() {
-  detachInterrupt(0);
-  int returnValue = left_encoder_count;
-  left_encoder_count = 0;
-  attachInterrupt(0, left_encoder, RISING);
-  return ceil((returnValue / 35.0) * 26.7);
+  long localEncoder = leftEncoderPos;
+  leftEncoderPos = 0;
+
+  return ceil((localEncoder / ONE_ROTATION) * CIRCUMFERENCE);
 }
 
-bool checkRearObstacle() {
-  return (digitalRead(A0) == LOW);
-}
+ros::Subscriber<std_msgs::String> sub("/hercules/motorCtrl", onMotorCtrlMsg );
 
-int getFrontDistance() {
-  return sonar.ping() / US_ROUNDTRIP_CM;
-}
+void setup() {
+  delay(10000);
 
+  pinMode(rightEncoderPinA, INPUT);
+  digitalWrite(rightEncoderPinA, HIGH);
+  pinMode(rightEncoderPinB, INPUT);
+  digitalWrite(rightEncoderPinB, HIGH);
 
-void setup()
-{
-  MOTOR.init();
-  MOTOR.setStop1();
-  MOTOR.setStop2();
-  attachInterrupt(0, left_encoder, RISING);
-  attachInterrupt(1, right_encoder, RISING);
+  attachInterrupt(0, dorightEncoder, CHANGE);
 
-  pinMode(A0, INPUT);
-  pinMode(A1, INPUT);
+  pinMode(leftEncoderPinA, INPUT);
+  digitalWrite(leftEncoderPinA, HIGH);
+  pinMode(leftEncoderPinB, INPUT);
+  digitalWrite(leftEncoderPinB, HIGH);
+
+  attachInterrupt(4, doleftEncoder, CHANGE);
+
+  saberTooth.begin(9600);
+  nh.getHardware()->setBaud(57600);
   nh.initNode();
   nh.advertise(sensorTopic);
   nh.subscribe(sub);
 }
 
 long lastPub = 0;
-void loop()
-{
+void loop() {
+
   if (millis() - lastMotorCtrlTime > 2000) {
-    MOTOR.setStop1();
-    MOTOR.setStop2();
+    motorStop();
+    lastMotorCtrlTime = millis();
   }
 
-  int frontDistance = getFrontDistance();
-  bool rearObstacle = checkRearObstacle();
-
-  if (autoFlag) {
-    if (rearObstacle) {
-      lastMotorCtrlMsg = "Auto: Rear Obstacle";
-      MOTOR.setSpeedDir1(30, DIRF);
-      MOTOR.setSpeedDir2(30, 1 - DIRF);
-      absRightSpeed = 30;
-      absLeftSpeed = 30;
-    } else if (frontDistance != 0 && frontDistance < 30) {
-      lastMotorCtrlMsg = "Auto: Front Obstacle";
-      MOTOR.setSpeedDir1(20, DIRR);
-      MOTOR.setSpeedDir2(20, 1 - DIRR);
-      absRightSpeed = -30;
-      absLeftSpeed = -30;
-    } else if (frontDistance < 40) {
-      lastMotorCtrlMsg = "Auto: Avoid Front Obstacle";
-      MOTOR.setSpeedDir1(35, DIRF);
-      MOTOR.setSpeedDir2(35, 1 - DIRR);
-      absRightSpeed = -30;
-      absLeftSpeed = 30;
-    } else if (frontDistance < 80) {
-      lastMotorCtrlMsg = "Auto: Go Slow Obstacle";
-      MOTOR.setSpeedDir1(20, DIRF);
-      MOTOR.setSpeedDir2(20, 1 - DIRF);
-      absRightSpeed = 30;
-      absLeftSpeed = 30;
-    } else if (frontDistance > 80) {
-      lastMotorCtrlMsg = "Auto: All Clear";
-      MOTOR.setSpeedDir1(30, DIRF);
-      MOTOR.setSpeedDir2(30, 1 - DIRF);
-      absRightSpeed = 30;
-      absLeftSpeed = 30;
-    }
-  }
-
-/*
-  if ((absRightSpeed > 0 || absLeftSpeed > 0) && frontDistance > 0 && frontDistance < 5) {
-    MOTOR.setStop1();
-    MOTOR.setStop2();
-
-    lastMotorCtrlMsg = "Stop, front obstacle";
-    lastMotorCtrlMsg.concat("R: ");
-    lastMotorCtrlMsg.concat(absRightSpeed);
-    lastMotorCtrlMsg.concat("L: ");
-    lastMotorCtrlMsg.concat(absLeftSpeed);
-    lastMotorCtrlMsg.concat("Time: ");
-    lastMotorCtrlMsg.concat(millis());
-  } else if ((absRightSpeed < 0 || absLeftSpeed < 0) && rearObstacle) {
-    MOTOR.setStop1();
-    MOTOR.setStop2();
-    lastMotorCtrlMsg = "Stop, rear obstacle";
-    lastMotorCtrlMsg.concat("R: ");
-    lastMotorCtrlMsg.concat(absRightSpeed);
-    lastMotorCtrlMsg.concat("L: ");
-    lastMotorCtrlMsg.concat(absLeftSpeed);
-    lastMotorCtrlMsg.concat("Time: ");
-    lastMotorCtrlMsg.concat(millis());
-  }
-*/
   if (millis() - lastPub > 100) {
-    String sensorData = "";
-    sensorData.concat("A:");
-    sensorData.concat(autoFlag);
-    sensorData.concat(";P:");
-    sensorData.concat(frontDistance);
-    sensorData.concat(";IR:");
-    sensorData.concat(rearObstacle);
-    sensorData.concat(";RE:");
-    sensorData.concat(getRightEncoder());
-    sensorData.concat(";LE:");
-    sensorData.concat(getLeftEncoder());
-    sensorData.concat(";LM:");
-    sensorData.concat(lastMotorCtrlMsg);
-    sensorMsg.data = sensorData.c_str();
-    sensorTopic.publish( &sensorMsg );
+    publishSensorData("OK");
     lastPub = millis();
   }
   nh.spinOnce();
 }
+
+void dorightEncoder() {
+  if (digitalRead(rightEncoderPinA) == digitalRead(rightEncoderPinB)) {
+    rightEncoderPos--;  //must be opposite of the left encoder to ensure fwd is positive
+  } else {
+    rightEncoderPos++;  //must be opposite of the left encoder to ensure fwd is positive
+  }
+}
+
+void doleftEncoder() {
+  if (digitalRead(leftEncoderPinA) == digitalRead(leftEncoderPinB)) {
+    leftEncoderPos++;
+  } else {
+    leftEncoderPos--;
+  }
+}
+
+void motorStop() {
+  saberTooth.write((byte)0);
+}
+
+void motorSpeed(byte left, byte right) {
+  saberTooth.write(left);
+  saberTooth.write(right);
+}
+
+int cStrLen(const char* cstr) {
+  int counter = 0;
+  while (cstr[counter] != '\0') {
+    counter++1;
+  }
+  return counter;
+}
+
