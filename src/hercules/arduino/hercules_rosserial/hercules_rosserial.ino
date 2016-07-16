@@ -198,6 +198,7 @@ void loop()
     }
   }
 
+/*
   if ((absRightSpeed > 0 || absLeftSpeed > 0) && frontDistance > 0 && frontDistance < 5) {
     MOTOR.setStop1();
     MOTOR.setStop2();
@@ -220,8 +221,8 @@ void loop()
     lastMotorCtrlMsg.concat("Time: ");
     lastMotorCtrlMsg.concat(millis());
   }
-
-  if (millis() - lastPub > 500) {
+*/
+  if (millis() - lastPub > 100) {
     String sensorData = "";
     sensorData.concat("A:");
     sensorData.concat(autoFlag);

@@ -8,107 +8,245 @@ import glob
 import time
 import rospy
 import atexit
-from std_msgs.msg import String
+from std_msgs.msg import String, Int16
 from sensor_msgs.msg import LaserScan
 from BaseHTTPServer import BaseHTTPRequestHandler,HTTPServer
 from PIL import Image
 from time import sleep
 from urlparse import urlparse, parse_qs
 from socket import error as socket_error
+from math import sin, cos, pi, ceil
+
+from geometry_msgs.msg import Quaternion
+from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
+from tf.broadcaster import TransformBroadcaster
+
+
+class OdometryPub:
+    def __init__(self):
+        self.ticks_meter = float(100)  # The number of wheel encoder ticks per meter of travel
+        self.base_width = float(0.129) # The wheel base width in meters
+        
+        self.base_frame_id = 'base_link' # the name of the base frame of the robot
+        self.odom_frame_id = 'odom' # the name of the odometry reference frame
+        
+        self.encoder_min = -32768
+        self.encoder_max = 32768
+        self.encoder_low_wrap = (self.encoder_max - self.encoder_min) * 0.3 + self.encoder_min 
+        self.encoder_high_wrap = (self.encoder_max - self.encoder_min) * 0.7 + self.encoder_min 
+        
+        # internal data
+        self.enc_left = None        # wheel encoder readings
+        self.enc_right = None
+        self.left = 0               # actual values coming back from robot
+        self.right = 0
+        self.x = 0                  # position in xy plane 
+        self.y = 0
+        self.th = 0
+        self.dx = 0                 # speeds in x/rotation
+        self.dr = 0
+        self.then = 0
+        
+        self.odomPub = rospy.Publisher("/odom", Odometry,queue_size=10)
+        self.odomBroadcaster = TransformBroadcaster()
+     
+    def update(self, left, right):
+        if(self.then == 0):
+            self.then = rospy.Time.now()
+            return
+
+        self.right = right;
+        self.left = left;
+        now = rospy.Time.now()
+        elapsed = now - self.then
+        self.then = now
+        elapsed = elapsed.to_sec()
+            
+        # calculate odometry
+        if self.enc_left == None:
+            d_left = 0
+            d_right = 0
+        else:
+            d_left = (self.left - self.enc_left) / self.ticks_meter
+            d_right = (self.right - self.enc_right) / self.ticks_meter
+        self.enc_left = self.left
+        self.enc_right = self.right
+          
+        # distance traveled is the average of the two wheels 
+        d = ( d_left + d_right ) / 2
+        # this approximation works (in radians) for small angles
+        th = ( d_right - d_left ) / self.base_width
+        # calculate velocities
+        self.dx = d / elapsed
+        self.dr = th / elapsed
+           
+             
+        if (d != 0):
+            # calculate distance traveled in x and y
+            x = cos( th ) * d
+            y = -sin( th ) * d
+            # calculate the final position of the robot
+            self.x = self.x + ( cos( self.th ) * x - sin( self.th ) * y )
+            self.y = self.y + ( sin( self.th ) * x + cos( self.th ) * y )
+        if( th != 0):
+            self.th = self.th + th
+                
+        # publish the odom information
+        quaternion = Quaternion()
+        quaternion.x = 0.0
+        quaternion.y = 0.0
+        quaternion.z = sin( self.th / 2 )
+        quaternion.w = cos( self.th / 2 )
+        self.odomBroadcaster.sendTransform(
+            (self.x, self.y, 0),
+            (quaternion.x, quaternion.y, quaternion.z, quaternion.w),
+            rospy.Time.now(),
+            self.base_frame_id,
+            self.odom_frame_id
+        )
+            
+        odom = Odometry()
+        odom.header.stamp = now
+        odom.header.frame_id = self.odom_frame_id
+        odom.pose.pose.position.x = self.x
+        odom.pose.pose.position.y = self.y
+        odom.pose.pose.position.z = 0
+        odom.pose.pose.orientation = quaternion
+        odom.child_frame_id = self.base_frame_id
+        odom.twist.twist.linear.x = self.dx
+        odom.twist.twist.linear.y = 0
+        odom.twist.twist.angular.z = self.dr
+        self.odomPub.publish(odom)
+            
 
 class MotorController:
-    maxSpeed = 100
+    maxSpeed = 3
     rosPub = None
     leftMotor = 0
     rightMotor = 0
     leftEncoder = 0
     rightEncoder = 0
-    lastOdometryUpdate = 0
+    leftEncoderDelta = 0
+    rightEncoderDelta = 0
     lastPublish = {}
     isHalted = True
+    leftAccel = 0
+    rightAccel = 0
+
+    requiredLeft = 0
+    requiredRight = 0
+    owner = ""
+    wayPointTimeout = 0
+    odom = OdometryPub()
 
     def __init__(self):
         self.rosPub = rospy.Publisher('/hercules/motorCtrl', String, queue_size=10)
 
     def updateOdometry(self, leftEncoder, rightEncoder):
-        self.leftEncoder = leftEncoder
-        self.rightEncoder = rightEncoder
+        if(self.isHalted):
+            return
+        leftEncoderDelta = self.leftEncoder - leftEncoder
+        rightEncoderDelta = self.rightEncoder - rightEncoder
+        self.leftEncoder = self.leftEncoder  + leftEncoder
+        self.rightEncoder = self.rightEncoder + rightEncoder
+        #self.odom.update(leftEncoder, rightEncoder)
+        self.evaluateWayPoint()
+        self.handleAccelerationLeft(self.leftAccel)
+        self.handleAccelerationRight(self.rightAccel)
+        self.publish()
 
-    def forward(self, frontDistance):
+    def evaluateWayPoint(self):
+        if(self.leftMotor == 0 and self.rightMotor == 0):
+            return
+
+        if(self.requiredRight <= self.rightEncoder and self.requiredLeft <= self.leftEncoder):
+            rospy.loginfo('evaluateWayPoint: waypoint completed')
+            self.owner = ""
+            self.stop()
+        
+        if(self.leftEncoderDelta > self.maxSpeed):
+            self.leftMotor = self.leftMotor - 1
+
+        if(self.rightEncoderDelta > self.maxSpeed):
+            self.rightMotor = self.rightMotor - 1
+
+    def setWayPoint(self, owner, requiredDistance):
+        if(time.time() - self.wayPointTimeout > 20):
+            rospy.loginfo('setWayPoint: Timeout - Owner is was ' + owner + '! Left: ' + str(self.requiredLeft) + ' Right: ' + str(self.requiredLeft))
+            self.requiredRight = 0
+            self.requiredLeft = 0
+        elif(self.owner == owner):
+            rospy.loginfo('setWayPoint: Owner is me! Left: ' + str(self.requiredLeft) + ' Right: ' + str(self.requiredLeft))
+            return True
+        elif(self.requiredRight > self.rightEncoder or self.requiredLeft > self.leftEncoder):
+            rospy.loginfo('setWayPoint(' + owner +'): Existing waypoint exists! Left: ' + str(self.requiredLeft) + ' Right: ' + str(self.requiredLeft))
+            return False
+
+        self.requiredRight = self.requiredRight + requiredDistance
+        self.requiredLeft = self.requiredLeft + requiredDistance
+        self.owner = owner
+        self.wayPointTimeout = time.time()
+        rospy.loginfo('setWayPoint: Set waypoint Left: ' + str(self.requiredLeft) + ' Right: ' + str(self.requiredLeft))
+        return True
+
+    def handleAccelerationLeft(self, direction):
+        if(self.leftMotor < 1 and direction > 1):
+            self.leftMotor = 0
+        elif(self.leftMotor > 1 and direction < 1):
+            self.leftMotor = 0
+            
+        if(self.leftEncoderDelta < self.maxSpeed):
+            self.leftMotor += 0.6 * direction
+
+    def handleAccelerationRight(self, direction):
+        if(self.rightMotor < 1 and direction > 1):
+            self.rightMotor = 0
+        elif(self.rightMotor > 1 and direction < 1):
+            self.rightMotor = 0
+
+        if(self.rightEncoderDelta < self.maxSpeed):
+            self.rightMotor += 0.6 * direction
+
+    def forward(self, requiredDistance):
         if(self.isHalted):
             return
 
-        if(self.leftMotor != self.rightMotor):
-            self.leftMotor = abs(self.leftMotor + self.rightMotor)/2
-            self.rightMotor = self.leftMotor
+        if(not self.setWayPoint("forward", requiredDistance)):
+            return
 
-        if(self.leftMotor > 0 and frontDistance / 3 < self.leftEncoder):
-            rospy.loginfo('forward: approaching obstacle, slowing down left motor.')
-            self.leftMotor -= self.leftMotor/3
-        elif ( self.leftMotor < self.maxSpeed ):
-            self.leftMotor += 1
+        self.leftAccel = 1
+        self.rightAccel = 1
 
-        if(self.rightMotor > 0 and frontDistance / 3 < self.rightEncoder):
-            rospy.loginfo('forward: approaching obstacle, slowing down right motor.')
-            self.rightMotor -= self.rightMotor/3
-        elif ( self.rightMotor < self.maxSpeed ):
-            self.rightMotor += 1
-        self.publish()
-
-    def turnRight(self, turnInPlace):
+    def turnRight(self):
         if(self.isHalted):
             return
 
-        if(self.leftMotor == self.rightMotor):
-            self.leftMotor = self.leftMotor / 3
-            self.rightMotor = self.rightMotor / 3
+        if(not self.setWayPoint("turnRight", 20)):
+            return
 
-        if( turnInPlace ):
-            self.rightMotor = -1 * self.leftMotor
+        self.leftAccel = 1
+        self.rightAccel = -1
 
-        if ( self.leftMotor < self.maxSpeed ):
-            self.leftMotor += 9
-
-        if ( self.rightMotor > 0 or abs(self.rightMotor) < self.maxSpeed ):
-            self.rightMotor -= 9
-
-        self.publish()
-
-    def turnLeft(self, turnInPlace):
+    def turnLeft(self):
         if(self.isHalted):
             return
 
-        if(self.leftMotor == self.rightMotor):
-            self.leftMotor = self.leftMotor / 3
-            self.rightMotor = self.rightMotor / 3
+        if(not self.setWayPoint("turnLeft", 20)):
+            return
 
-        if( turnInPlace ):
-            self.leftMotor = -1 * self.rightMotor
+        self.leftAccel = -1
+        self.rightAccel = 1
 
-        if ( self.rightMotor < self.maxSpeed ):
-            self.rightMotor += 9
-
-        if ( self.leftMotor > 0 or abs(self.leftMotor) < self.maxSpeed ):
-            self.leftMotor -= 9
-
-        self.publish()
-
-    def reverse(self, reverseDistance):
+    def reverse(self, requiredDistance):
         if(self.isHalted):
             return
 
-        if(self.leftMotor < 0 and reverseDistance / 3 < self.leftEncoder):
-            rospy.loginfo('reverse: approaching obstacle, slowing down left motor')
-            self.leftMotor += abs(self.leftMotor/3)
-        elif ( self.leftMotor > 0 or abs(self.leftMotor) < self.maxSpeed ):
-            self.leftMotor -= 1
+        if(not self.setWayPoint("reverse", requiredDistance)):
+            return
 
-        if(self.rightMotor < 0 and reverseDistance / 3 < self.leftEncoder):
-            rospy.loginfo('reverse: approaching obstacle, slowing down right motor')
-            self.rightMotor += abs(self.rightMotor/3)
-        elif ( self.leftMotor > 0 or abs(self.leftMotor) < self.maxSpeed ):
-            self.rightMotor -= 1
-        self.publish()
+        self.leftAccel = -1
+        self.rightAccel = -1
 
     def isReverse(self):
         if(self.leftMotor < 0 and self.rightMotor < 0):
@@ -122,6 +260,10 @@ class MotorController:
             self.leftMotor = 0
             self.rightMotor = 0
             self.publish()
+            self.requiredRight = 0
+            self.requiredLeft = 0
+            self.wayPointTimeout = 0
+            self.wayPointOwner = None
 
     def stop(self):
         self.leftMotor = 0
@@ -130,14 +272,20 @@ class MotorController:
 
     def publish(self):
         leftMotorDirCmd = 'F' if self.leftMotor > 0 else 'R'
-        leftMotorSpeedCmd = chr(abs(self.leftMotor) + 48)
+        leftMotorSpeedCmd = chr(abs(int(ceil(self.leftMotor))) + 48)
         rightMotorDirCmd = 'F' if self.rightMotor > 0 else 'R'
-        rightMotorSpeedCmd = chr(abs(self.rightMotor) + 48)
+        rightMotorSpeedCmd = chr(abs(int(ceil(self.rightMotor))) + 48)
         self.lastPublish['leftMotorDir'] = leftMotorDirCmd
         self.lastPublish['leftMotorSpeed'] = abs(self.leftMotor) + 48
         self.lastPublish['rightMotorDir'] = rightMotorDirCmd
         self.lastPublish['rightMotorSpeed'] = abs(self.rightMotor) + 48
-        rospy.loginfo('MotorControlCmd: ' + leftMotorSpeedCmd + leftMotorDirCmd + rightMotorSpeedCmd + rightMotorDirCmd)
+        self.lastPublish['requiredLeft'] = self.requiredLeft
+        self.lastPublish['requiredRight'] = self.requiredRight
+        self.lastPublish['leftEncoder'] = self.leftEncoder
+        self.lastPublish['rightEncoder'] = self.rightEncoder
+        self.lastPublish['wayPointOwner'] = self.owner
+        if(leftMotorSpeedCmd != "0" or rightMotorSpeedCmd != "0"):
+            rospy.loginfo('MotorControlCmd: ' + leftMotorSpeedCmd + leftMotorDirCmd + rightMotorSpeedCmd + rightMotorDirCmd)
         self.rosPub.publish(leftMotorSpeedCmd + leftMotorDirCmd + rightMotorSpeedCmd + rightMotorDirCmd)
 
     def getState(self):
@@ -166,11 +314,11 @@ class MyHandler(BaseHTTPRequestHandler):
             s.end_headers()
             #f = open("/mnt/sdcard/") 
 
-            newest = max(glob.iglob('/mnt/sdcard/output/maps/*.tif'), key=os.path.getctime)
+            newest = max(glob.iglob('/home/ubuntu/tmp/maps/*.tif'), key=os.path.getctime)
             im = Image.open(newest)
             im.thumbnail(im.size)
-            im.save('/mnt/sdcard/output/maps/newest.jpeg', "JPEG", quality=100)
-            f = open('/mnt/sdcard/output/maps/newest.jpeg')
+            im.save('/home/ubuntu/tmp/maps/newest.jpeg', "JPEG", quality=100)
+            f = open('/home/ubuntu/tmp/maps/newest.jpeg')
             s.wfile.write(f.read())
             f.close()
         else:
@@ -186,6 +334,18 @@ class MyHandler(BaseHTTPRequestHandler):
             elif('resume' in params):
                 motorController.halt(False)
                 titleSuffix = 'Resuming...'
+            elif('turnRight' in params):
+                motorController.halt(False)
+                motorController.turnRight()
+                titleSuffix = 'Turning Right...'
+            elif('turnLeft' in params):
+                motorController.halt(False)
+                motorController.turnLeft()
+                titleSuffix = 'Turning Left...'
+            elif('reverse' in params):
+                motorController.halt(False)
+                motorController.reverse(20)
+                titleSuffix = 'Reversing...'
 
 
             s.wfile.write("<html><head><title>Hercules Management Console" + titleSuffix + "</title><meta http-equiv='refresh' content='10'></head><body>")
@@ -264,44 +424,30 @@ def scanCb(msg):
     outStr = `lidarData`
     #rospy.loginfo('LaserScan: ' + outStr)
 
-
     if(lidarData['minRange'] < 25 and (lidarData['minRangeAngle'] > 220 or lidarData['minRangeAngle'] < 45)):
-        rospy.loginfo("Turning left to avoid proxity on right." + `lidarData`)
-        motorController.turnLeft(True)
+        rospy.loginfo("Turning left to avoid proxity on right.")
+        motorController.turnLeft()
     elif(lidarData['minRange'] < 25 and (lidarData['minRangeAngle'] > 90 and lidarData['minRangeAngle'] < 200)):
-        rospy.loginfo("Turning right to avoid proxity on left." + `lidarData`)
-        motorController.turnRight(True)
-    elif( lidarData['frontMin'] > 45):
-        motorController.forward(lidarData['frontMin'])
-    elif ( lidarData['frontMin'] < 45 and lidarData['frontMin'] > 35):
+        rospy.loginfo("Turning right to avoid proxity on left.")
+        motorController.turnRight()
+    elif( lidarData['frontMin'] > 35):
+        motorController.forward(ceil(lidarData['frontMin'] - 30))
+    elif ( lidarData['frontMin'] <= 35):
         if(lidarData['maxRangeAngle'] > 220 or lidarData['maxRangeAngle'] < 45):
-            rospy.loginfo("Turning right to avoid forward obstacle." + `lidarData`)
-            motorController.turnRight(False)
+            rospy.loginfo("Turning right to avoid forward obstacle.")
+            motorController.turnRight()
         else:
-            rospy.loginfo("Turning left to avoid forward obstacle." + `lidarData`)
-            motorController.turnLeft(False)
-    elif ( lidarData['frontMin'] < 35 and lidarData['frontMin'] >= 25):
-        if(lidarData['maxRangeAngle'] > 220 or lidarData['maxRangeAngle'] < 45):
-            rospy.loginfo("Turning right (in place) to avoid forward obstacle." + `lidarData`)
-            motorController.turnRight(True)
-        else:
-            rospy.loginfo("Turning left (in place) to avoid forward obstacle." + `lidarData`)
-            motorController.turnLeft(True)
+            rospy.loginfo("Turning left to avoid forward obstacle.")
+            motorController.turnLeft()
     elif ( lidarData['frontMin'] <= 25):
         rospy.loginfo("Reversing to avoid forward obstacle.")
-        motorController.reverse(lidarData['rearMin'])
-    
-    if(lidarData['rearMin'] == -1 and motorController.isReverse()):
-        rospy.loginfo("no rear data and moving in rervse, stop")
-        motorController.stop()
-    elif(lidarData['rearMin'] < 55 and motorController.isReverse()):
-        rospy.loginfo("rear obstacle and moving in reverse, move forard instead")
-        motorController.forward()
+        motorController.reverse(min(lidarData['rearMin'], 50))
             
 def roverCb(msg):
     for nextSensor in msg.data.split(';',6):
         values = nextSensor.split(':',2) 
-        sensorData[values[0]] = values[1]
+        if(len(values) == 2):
+            sensorData[values[0]] = values[1]
 
     motorController.updateOdometry(int(sensorData['LE']), int(sensorData['RE']))
     #A:0;P:31;IR:0;RE:0;LE:0;LM:

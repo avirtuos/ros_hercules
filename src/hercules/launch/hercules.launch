@@ -5,10 +5,10 @@
 <arg name="pub_map_odom_transform" default="true"/>
 <arg name="scan_subscriber_queue_size" default="5"/>
 <arg name="scan_topic" default="scan"/>
-<arg name="map_size" default="4048"/>
+<arg name="map_size" default="1024"/>
 
   <node name="rplidarNode"          pkg="rplidar_ros"  type="rplidarNode" output="screen">
-  <param name="serial_port"         type="string" value="/dev/ttyUSB1"/>  
+  <param name="serial_port"         type="string" value="/dev/ttyUSB0"/>  
   <param name="serial_baudrate"     type="int"    value="115200"/>
   <param name="frame_id"            type="string" value="laser"/>
   <param name="inverted"            type="bool"   value="false"/>
@@ -28,17 +28,17 @@
 
 
     <!-- Map size / start point -->
-    <param name="map_resolution" value="0.06"/>
+    <param name="map_resolution" value="0.03"/>
     <param name="map_size" value="$(arg map_size)"/>
     <param name="map_start_x" value="0.5"/>
     <param name="map_start_y" value="0.5" />
-    <param name="map_multi_res_levels" value="3" />
+    <param name="map_multi_res_levels" value="6" />
 
     <!-- Map update parameters -->
     <param name="update_factor_free" value="0.4"/>
     <param name="update_factor_occupied" value="0.9" />    
-    <param name="map_update_distance_thresh" value="0.4"/>
-    <param name="map_update_angle_thresh" value="0.45" />
+    <param name="map_update_distance_thresh" value="0.6"/>
+    <param name="map_update_angle_thresh" value="0.2" />
     <param name="laser_z_min_value" value = "-1.0" />
     <param name="laser_z_max_value" value = "1.0" />
 
@@ -66,9 +66,9 @@
 <!-- start map saver -->
 <node pkg="hector_geotiff" type="geotiff_node" name="hector_geotiff_node" output="screen" launch-prefix="nice -n 15">
     <remap from="map" to="/dynamic_map" />
-    <param name="map_file_path" type="string" value="/mnt/sdcard/output/maps" />
+    <param name="map_file_path" type="string" value="/home/ubuntu/tmp/maps/" />
     <param name="map_file_base_name" type="string" value="hector_slam_map" />
-    <param name="geotiff_save_period" type="double" value="6" />
+    <param name="geotiff_save_period" type="double" value="10" />
     <param name="draw_background_checkerboard" type="bool" value="true" />
     <param name="draw_free_space_grid" type="bool" value="true" />
 
@@ -80,6 +80,6 @@
 
 <!--<node pkg="tf" type="static_transform_publisher" name="base_laser_broadcaster" args="0.0 0.0 0.0 0.0 0.0 0.0 /base_frame /laser_frame 40"/>-->
   <node pkg="rosserial_python" type="serial_node.py" name="serial_node">
-    <param name="port" value="/dev/ttyUSB0"/>
+    <param name="port" value="/dev/ttyUSB1"/>
   </node>
 </launch>
