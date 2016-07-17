@@ -121,7 +121,7 @@ class OdometryPub:
             
 
 class MotorController:
-    maxSpeed = 6
+    maxSpeed = 8
     rosPub = None
     leftMotor = 0
     rightMotor = 0
@@ -196,8 +196,8 @@ class MotorController:
     def setWayPoint(self, owner, requiredDistance):
         if(time.time() - self.wayPointTimeout > 20):
             rospy.loginfo('setWayPoint: Timeout - Owner is was ' + owner + '! Left: ' + str(self.requiredLeft) + ' Right: ' + str(self.requiredLeft))
-            self.requiredRight = 0
-            self.requiredLeft = 0
+            self.requiredRight = self.rightEncoder
+            self.requiredLeft = self.leftEncoder
         elif(self.owner == owner):
             #rospy.loginfo('setWayPoint: Owner is me (' + owner + ')! Left: ' + str(self.requiredLeft) + ' Right: ' + str(self.requiredLeft) + ' Actual -> Left: ' + str(self.leftEncoder) + ' Right: ' + str(self.rightEncoder))
             return True
@@ -205,6 +205,10 @@ class MotorController:
             #rospy.loginfo('setWayPoint(' + owner +'): Existing waypoint exists! Left: ' + str(self.requiredLeft) + ' Right: ' + str(self.requiredLeft))
             return False
 
+        self.rightAccel = 0
+        self.leftAccel = 0
+        self.owner = ""
+        self.stop()
         self.requiredRight = self.rightEncoder + requiredDistance
         self.requiredLeft = self.leftEncoder + requiredDistance
         self.owner = owner
@@ -244,7 +248,7 @@ class MotorController:
         if(self.isHalted):
             return
 
-        if(not self.setWayPoint("turnRight", 20)):
+        if(not self.setWayPoint("turnRight", random.randint(10, 30))):
             return
 
         self.leftAccel = 1
@@ -254,7 +258,7 @@ class MotorController:
         if(self.isHalted):
             return
 
-        if(not self.setWayPoint("turnLeft", 20)):
+        if(not self.setWayPoint("turnLeft", random.randint(10, 30))):
             return
 
         self.leftAccel = -1
@@ -344,8 +348,7 @@ class MotorController:
         self.lastPublish['wayPointOwner'] = self.owner
 
         if(leftMotorSpeedCmd != 192 or rightMotorSpeedCmd != 64):
-            rospy.loginfo('MotorControlCmd: L:' + str(self.leftMotor) + ' R:' + str(self.rightMotor) + ' RL:' + str(leftMotorSpeedCmd) + ' RR:' + str(rightMotorSpeedCmd))
-
+            rospy.loginfo('MotorControlCmd(' + self.owner + '): L:' + str(self.leftMotor) + ' R:' + str(self.rightMotor) + ' RL:' + str(leftMotorSpeedCmd) + ' RR:' + str(rightMotorSpeedCmd) + ' requiredRight: ' + str(self.requiredRight) + ' rightEncoder: ' + str(self.rightEncoder) + ' requiredLeft: ' + str(self.requiredLeft) + ' leftEncoder: '  + str(self.leftEncoder))
         self.rosPub.publish(chr(leftMotorSpeedCmd)  + chr(rightMotorSpeedCmd))
 
     def getState(self):
