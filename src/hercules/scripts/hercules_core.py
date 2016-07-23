@@ -8,6 +8,7 @@ import glob
 import time
 import rospy
 import atexit
+import random
 from std_msgs.msg import String, Int16
 from sensor_msgs.msg import LaserScan
 from BaseHTTPServer import BaseHTTPRequestHandler,HTTPServer
@@ -464,14 +465,14 @@ def scanCb(msg):
         ray = ray * 100
 
         #35 is a good range for front
-        if( count < 300 and count > 230):
+        if( count > 190 and count > 150):
             frontCount += 1
             frontSum += ray
             if( lidarData['frontMin'] == -1 or lidarData['frontMin'] > ray):
                 lidarData['frontMin'] = ray
 
         #55 is a good range for rear
-        if( count <100 and count > 60):
+        if( count <10 or count > 337):
             rearCount += 1
             rearSum += ray
             if( lidarData['rearMin'] == -1 or lidarData['rearMin'] > ray * 1.2):
@@ -495,19 +496,19 @@ def scanCb(msg):
     if(lidarData['minRange'] < 25):
         rospy.loginfo('LaserScan: ' + outStr)
 
-    if( lidarData['frontMin'] > 80):
-        motorController.forward(ceil(lidarData['frontMin'] - 30))
+    if( lidarData['frontMin'] > 40):
+        motorController.forward(min(lidarData['frontMin'], 20))
     elif ( lidarData['frontMin'] <= 30):
         newMsg = "Reversing to avoid forward obstacle."
         motorController.reverse(min(lidarData['rearMin'], 80))
-    elif(lidarData['minRange'] < 50 and (lidarData['minRangeAngle'] > 100 and lidarData['minRangeAngle'] < 230)):
+    elif(lidarData['minRange'] < 50 and (lidarData['minRangeAngle'] > 10 and lidarData['minRangeAngle'] < 140)):
         newMsg = "Turning left to avoid proxity on right."
         motorController.turnLeft()
-    elif(lidarData['minRange'] < 50 and (lidarData['minRangeAngle'] > 300 or lidarData['minRangeAngle'] < 60)):
+    elif(lidarData['minRange'] < 50 and (lidarData['minRangeAngle'] > 190 and lidarData['minRangeAngle'] < 337)):
         newMsg = "Turning right to avoid proxity on left."
         motorController.turnRight()
-    elif ( lidarData['frontMin'] <= 81):
-        if(lidarData['maxRangeAngle'] > 100 and lidarData['maxRangeAngle'] < 230):
+    elif ( lidarData['frontMin'] <= 40):
+        if(lidarData['maxRangeAngle'] > 10 and lidarData['maxRangeAngle'] < 140):
             newMsg = "Turning right to avoid forward obstacle."
             motorController.turnRight()
         else:
@@ -515,7 +516,7 @@ def scanCb(msg):
             motorController.turnLeft()
 
     if(lastMsg != newMsg):
-        rospy.loginfo(newMsg)
+        rospy.loginfo(newMsg + outStr)
         lastMsg = newMsg
             
 def roverCb(msg):
