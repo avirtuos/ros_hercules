@@ -68,7 +68,7 @@
     <remap from="map" to="/dynamic_map" />
     <param name="map_file_path" type="string" value="/home/ubuntu/tmp/maps/" />
     <param name="map_file_base_name" type="string" value="hector_slam_map" />
-    <param name="geotiff_save_period" type="double" value="30" />
+    <param name="geotiff_save_period" type="double" value="60" />
     <param name="draw_background_checkerboard" type="bool" value="true" />
     <param name="draw_free_space_grid" type="bool" value="true" />
 
@@ -96,36 +96,37 @@
       <param name="resolution"            value="1" />
       <param name="quality"               value="1" />
       <param name="sensing_mode"          value="1" />
-      <param name="frame_rate"            value="60" />
+      <param name="frame_rate"            value="10" />
       <param name="odometry_DB"           value="" />
       <param name="openni_depth_mode"     value="0" />
 
       <param name="rgb_topic"             value="rgb/image_rect_color" />
       <param name="rgb_cam_info_topic"    value="rgb/camera_info" />
-      <param name="rgb_frame_id"          value="/zed_tracked_frame" />
+      <param name="rgb_frame_id"          value="/base_frame" />
 
       <param name="left_topic"            value="left/image_rect_color" />
       <param name="left_cam_info_topic"   value="left/camera_info" />
-      <param name="left_frame_id"         value="/zed_tracked_frame" />
+      <param name="left_frame_id"         value="/base_frame" />
 
       <param name="right_topic"           value="right/image_rect_color" />
       <param name="right_cam_info_topic"  value="right/camera_info" />
-      <param name="right_frame_id"        value="/zed_tracked_frame" />
+      <param name="right_frame_id"        value="/base_frame" />
 
       <param name="depth_topic"           value="depth/image_rect_color" />
       <param name="depth_cam_info_topic"  value="depth/camera_info" />
-      <param name="depth_frame_id"        value="/zed_tracked_frame" />
+      <param name="depth_frame_id"        value="/base_frame" />
 
       <param name="point_cloud_topic"     value="point_cloud/cloud" />
       <param name="cloud_frame_id"        value="/base_frame" />
 
       <param name="odometry_topic"                value="odom" />
       <param name="odometry_frame_id"             value="/zed_initial_frame" />
-      <param name="odometry_transform_frame_id"   value="/zed_tracked_frame" />
+      <param name="odometry_transform_frame_id"   value="/base_frame" />
 
 
     </node>
 
+<!--
         <node pkg="pointcloud_to_laserscan" type="pointcloud_to_laserscan_node" name="pointcloud_to_laserscan">
 
         <remap from="cloud_in" to="point_cloud/cloud"/>
@@ -137,6 +138,16 @@
         </rosparam>
 
     </node>
+
+-->
+      <node pkg="depthimage_to_laserscan" type="depthimage_to_laserscan" name="depthimage_to_laserscan">
+        <param name="scan_height" value="100"/>
+        <param name="output_frame_id" value="/base_frame"/>
+        <param name="range_min" value="0.3"/>
+        <param name="range_max" value="60"/>
+        <remap from="image" to="/zed/depth/image_rect_color"/>
+        <remap from="scan" to="/zed/scan"/>
+     </node>
   </group>
 
 </launch>
