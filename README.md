@@ -30,26 +30,31 @@ The core of this robotics platform is based around NVidia's Jetson TX1 Single Ch
 * <a href="https://www.amazon.com/gp/product/B00NAB8VQG/ref=oh_aui_detailpage_o01_s01?ie=UTF8&psc=1">Set of 20 4-Pin Plug Male and Female Wire Cable Connectors ~ $7</a>
 * <a href="https://www.amazon.com/gp/product/B00MMWDYI4/ref=oh_aui_detailpage_o02_s00?ie=UTF8&psc=1">Assorted Spacers and Stand Offs</a>
 
- 
+
+# Finished Product Images
+
+I like to start with some images of what you can expect this project to look like if you attempt it yourself, this usually helps folks understand what they are reading since they have a frame of refference to relate it to.
+
+
+## External View
+
+![alt tag](https://raw.githubusercontent.com/avirtuos/ros_hercules/master/doc/img/external_view_marked.jpg)
+
+
+## Internal View
+
+![alt tag](https://raw.githubusercontent.com/avirtuos/ros_hercules/master/doc/img/internal_view_marked.jpg)
+
+
+## Arduino Wiring Diagram
+
+![alt tag](https://raw.githubusercontent.com/avirtuos/ros_hercules/master/doc/img/arduino_marked.jpg)
+
+
 # Software List
 
 CP210x USB UART Driver (For RPLidar and ESP8266)
 https://www.silabs.com/Support%20Documents/Software/Mac_OSX_VCP_Driver.zip
-
-Comes with no instructions, eleduino website has no useful content. Here are the issues you might experience, mostly taken from http://www.guillier.org/blog/2015/06/wifi-with-esp8266-part-3/ --
-
-* You will need to install a serial driver for the chip: https://www.silabs.com/Support%20Documents/Software/Mac_OSX_VCP_Driver.zip
-
-* You will need a serial program to connect to it. CoolTerm is for generic use, but go with ESPlorer and read http://esp8266.ru/download/esp8266-doc/Getting%20Started%20with%20the%20ESPlorer%20IDE%20-%20Rui%20Santos.pdf
-
-* On connection, says "Please run file.remove("user.lua") before first use." -- enter the commands
-
-file.remove("user.lua")
-node.restart()
-
-* To flash the firmware you need special flags. Get NodeMCU firmware from https://github.com/nodemcu/nodemcu-firmware/releases then
-
-git clone https://github.com/themadinventor/esptool.git
 
 * Comming Soon!
 
@@ -136,4 +141,10 @@ void loop(){
 
 ## StereoLabs ZED Frame Rate Tips
 
-I just wanted to close the loop here incase others find this and are looking for an alternative. Since I mostly needed to get a 2D 'laser scan' from my ZED's depth image I found a way to avoid using the pointcloud, which after profiling the wrapper's C/++ code is def the bottleneck. by using http://wiki.ros.org/depthimage_to_laserscan I am able to get 18+ HZ for the laser scan created from the ZED's HD depth image. Though when enabling MEDIUM or HIGH quality the usefulness of the depth image for laser scans of 'rooms' drops considerably though object detection improves significantly.
+While the ZED camera from StereoLabs was very quick to get up and running thanks to their <a href='https://www.stereolabs.com/getstarted/index.php'>tutorials</a>, there were a few aspects of the camera's performance that puzzled me but are easily explained once your find the supporting reasons.
+
+* HD2K is not supported on the TX1, yet... so if you change the resolution setting past 1080 you'll get strange errors from the sed_wrapper for ros.
+* The point cloud or depth image were unusable for 2D laser scan projection ( <a href='http://wiki.ros.org/depthimage_to_laserscan'>via depthimage_to_laserscan</a> ) but looking at the depth image myself it was actually very good at detecting obstacles as they approach. This was indoors, so outdoor performance may vary but generally the performance mode was much better at mapping out a room, detecting walls and furniture. The quality mode was better at detecting a shoe in the path of my rover though.
+* You may be tempted to use the point cloud to do obstacle detection, either natively or via pointcloud_to_laserscan, but both of these options will produce far lower frame rates than using the depth image directly. After performance providing the zed_wrapper with callgrind its pretty clear that generating the point cloud from the depth image is costly. I was only able to achieve 2 - 4 HZ in with the 1080 resolution when subscribing to the pointcloud even though the depth image was being publish at nearly 18 HZ. This is when I switched to depthimage_to_laserscan and was able to produce laserscans at the same rate as the depth image. This makes sense since the laser scan is only using a small portion of the depthimage and not generating nearly as many points as the point cloud.
+* I've yet to test the ZED outdoors as the weather hasn't been the best for that but I'll update when I get the chance to do so.
+
