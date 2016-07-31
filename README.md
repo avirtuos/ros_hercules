@@ -26,10 +26,30 @@ The core of this robotics platform is based around NVidia's Jetson TX1 Single Ch
 * <a href="https://www.amazon.com/gp/product/B00MU44JS8/ref=oh_aui_detailpage_o01_s00?ie=UTF8&psc=1">Tamiya Connectors ~ $10</a>
 * <a href="https://www.amazon.com/gp/product/B00WEBJRE8/ref=oh_aui_detailpage_o04_s01?ie=UTF8&psc=1">LM2596 Voltage and Current Regulator ~ $18</a>
 * <a href="https://www.amazon.com/gp/product/B0064SHG0Y/ref=oh_aui_detailpage_o04_s01?ie=UTF8&psc=1">Low Voltage Monitor for 2S to 8S LiPO Batteries ~$10</a>
+* <a href="https://www.amazon.com/gp/product/B010O1G1ES/ref=oh_aui_detailpage_o00_s00?ie=UTF8&psc=1">ESP8266 NodeMCU wifi Module ~ $6</a>
 * <a href="https://www.amazon.com/gp/product/B00NAB8VQG/ref=oh_aui_detailpage_o01_s01?ie=UTF8&psc=1">Set of 20 4-Pin Plug Male and Female Wire Cable Connectors ~ $7</a>
 * <a href="https://www.amazon.com/gp/product/B00MMWDYI4/ref=oh_aui_detailpage_o02_s00?ie=UTF8&psc=1">Assorted Spacers and Stand Offs</a>
+
  
 # Software List
+
+CP210x USB UART Driver (For RPLidar and ESP8266)
+https://www.silabs.com/Support%20Documents/Software/Mac_OSX_VCP_Driver.zip
+
+Comes with no instructions, eleduino website has no useful content. Here are the issues you might experience, mostly taken from http://www.guillier.org/blog/2015/06/wifi-with-esp8266-part-3/ --
+
+* You will need to install a serial driver for the chip: https://www.silabs.com/Support%20Documents/Software/Mac_OSX_VCP_Driver.zip
+
+* You will need a serial program to connect to it. CoolTerm is for generic use, but go with ESPlorer and read http://esp8266.ru/download/esp8266-doc/Getting%20Started%20with%20the%20ESPlorer%20IDE%20-%20Rui%20Santos.pdf
+
+* On connection, says "Please run file.remove("user.lua") before first use." -- enter the commands
+
+file.remove("user.lua")
+node.restart()
+
+* To flash the firmware you need special flags. Get NodeMCU firmware from https://github.com/nodemcu/nodemcu-firmware/releases then
+
+git clone https://github.com/themadinventor/esptool.git
 
 * Comming Soon!
 
@@ -113,3 +133,7 @@ void loop(){
 }
 
 ```
+
+## StereoLabs ZED Frame Rate Tips
+
+I just wanted to close the loop here incase others find this and are looking for an alternative. Since I mostly needed to get a 2D 'laser scan' from my ZED's depth image I found a way to avoid using the pointcloud, which after profiling the wrapper's C/++ code is def the bottleneck. by using http://wiki.ros.org/depthimage_to_laserscan I am able to get 18+ HZ for the laser scan created from the ZED's HD depth image. Though when enabling MEDIUM or HIGH quality the usefulness of the depth image for laser scans of 'rooms' drops considerably though object detection improves significantly.
