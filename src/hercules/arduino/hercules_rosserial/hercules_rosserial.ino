@@ -189,7 +189,10 @@ float readVoltage() {
   float temp;
   int val11 = analogRead(voltageSensorPin);
   temp = val11 / 4.092;
-  return (temp/10) - 1.2;
+  //After testing several different batteries and volatges, 
+  //this sensor seems to report voltages a bit high, typically between .9 and 1.2 volts too high.
+  //So using 1.2v as a calibration factor just to be safe.
+  return (temp/10) - 1.2;  
 }
 
 int cStrLen(const char* cstr) {
