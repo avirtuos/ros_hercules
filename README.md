@@ -16,6 +16,7 @@ The core of this robotics platform is based around NVidia's Jetson TX1 Single Ch
 * <a href="http://www.nvidia.com/object/jetson-tx1-dev-kit.html">Nvidia Jetson TX1 Module + Dev Kit</a> ($300 after educational discount)
 * <a href="http://www.connecttech.com/sub/products/ASG003.asp">Orbitty Carier Board ~$148</a>
 * <a href="https://www.amazon.com/gp/product/B00LGC2CTI/ref=oh_aui_detailpage_o05_s00?ie=UTF8&psc=1">RPLidar 360 ~ $440</a>
+* <a href="https://www.stereolabs.com/zed/specs/">ZED Camera by StereoLabs ~ $449 (only useful if you have an Nvida graphics card!)</a>
 * <a href="http://www.robotshop.com/en/4wd1-robot-aluminum-kit.html">Lynxmotion Aluminum A4WD1 Rover Kit ~ $220</a>
 * <a href="http://www.robotshop.com/en/lynxmotion-qme-01-quadrature-encoder.html">2 x Lynxmotion Quadrature Motor Encoder (with Cable) ~ $30</a>
 * <a href="http://www.robotshop.com/en/sabertooth-dual-regenerative-motor-driver.html">Sabertooth Dual 12A 6V-24V Regenerative Motor Driver ~ $80</a>
