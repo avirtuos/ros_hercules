@@ -17,6 +17,8 @@
    to the A & B channel outputs
 
 */
+//A2
+#define voltageSensorPin  2 
 
 #define rightEncoderPinA  3
 #define rightEncoderPinB  4
@@ -93,6 +95,10 @@ void publishSensorData(String msg) {
   sensorData.concat(getRightEncoder());
   sensorData.concat(";LE:");
   sensorData.concat(getLeftEncoder());
+  sensorData.concat(";VI:");
+  char buffer[10];
+  dtostrf(readVoltage(),3,1,buffer);
+  sensorData.concat(buffer);
   sensorData.concat(";LM:");
   sensorData.concat(msg);
   sensorMsg.data = sensorData.c_str();
@@ -179,10 +185,17 @@ void motorSpeed(byte left, byte right) {
   saberTooth.write(right);
 }
 
+float readVoltage() {
+  float temp;
+  int val11 = analogRead(voltageSensorPin);
+  temp = val11 / 4.092;
+  return (temp/10) - 1.2;
+}
+
 int cStrLen(const char* cstr) {
   int counter = 0;
   while (cstr[counter] != '\0') {
-    counter++1;
+    counter++;
   }
   return counter;
 }
