@@ -1,8 +1,6 @@
 
-#define USE_USBCON
+//#define USE_USBCON
 //The above flag is required only for Arduino Micro / Pro Micro based on Leonardo
-
-#include <SoftwareSerial.h>
 
 #include <ros.h>
 
@@ -18,13 +16,13 @@
 
 */
 //A2
-#define voltageSensorPin  2 
+#define voltageSensorPin  3 
 
-#define rightEncoderPinA  3
+#define rightEncoderPinA  2  //int
 #define rightEncoderPinB  4
 
-#define leftEncoderPinA  7
-#define leftEncoderPinB  6
+#define leftEncoderPinA  3  //int
+#define leftEncoderPinB  5
 
 #define ONE_ROTATION  6000.0
 #define CIRCUMFERENCE 15.4488
@@ -39,11 +37,6 @@
 
 volatile long rightEncoderPos = 0;  //MOTOR 1  - ( 1 - reverse - 64 - forward - 127)
 volatile long leftEncoderPos = 0;   //MOTOR 2 - ( 128 - reverse - 192 - forward - 255)
-
-// software serial #2: RX = digital pin 8, TX = digital pin 9
-// on the Mega, use other pins instead, since 8 and 9 don't work on the Mega
-SoftwareSerial saberTooth(9, 8);
-
 
 ros::NodeHandle  nh;
 
@@ -136,9 +129,9 @@ void setup() {
   pinMode(leftEncoderPinB, INPUT);
   digitalWrite(leftEncoderPinB, HIGH);
 
-  attachInterrupt(4, doleftEncoder, CHANGE);
+  attachInterrupt(1, doleftEncoder, CHANGE);
 
-  saberTooth.begin(9600);
+  Serial2.begin(9600);
   nh.getHardware()->setBaud(57600);
   nh.initNode();
   nh.advertise(sensorTopic);
@@ -177,12 +170,12 @@ void doleftEncoder() {
 }
 
 void motorStop() {
-  saberTooth.write((byte)0);
+  Serial2.write((byte)0);
 }
 
 void motorSpeed(byte left, byte right) {
-  saberTooth.write(left);
-  saberTooth.write(right);
+  Serial2.write(left);
+  Serial2.write(right);
 }
 
 float readVoltage() {
