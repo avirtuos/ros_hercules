@@ -38,8 +38,7 @@
 volatile long rightEncoderPos = 0;  //MOTOR 1  - ( 1 - reverse - 64 - forward - 127)
 volatile long leftEncoderPos = 0;   //MOTOR 2 - ( 128 - reverse - 192 - forward - 255)
 
-ros::NodeHandle  nh;
-
+ros::NodeHandle_<ArduinoHardware, 3, 3, 125, 125> nh;
 
 
 long lastMotorCtrlTime = 0;
@@ -136,12 +135,13 @@ void setup() {
   nh.initNode();
   nh.advertise(sensorTopic);
   nh.subscribe(sub);
+  nh.logwarn("Starting...");
 }
 
 long lastPub = 0;
 void loop() {
-
   if (millis() - lastMotorCtrlTime > 2000) {
+    nh.logwarn("Motor stop initiated...");
     motorStop();
     lastMotorCtrlTime = millis();
   }
@@ -151,6 +151,7 @@ void loop() {
     lastPub = millis();
   }
   nh.spinOnce();
+  delay(2000);
 }
 
 void dorightEncoder() {
