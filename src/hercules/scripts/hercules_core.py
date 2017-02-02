@@ -85,11 +85,13 @@ class OdometryPub:
              
         if (d != 0):
             # calculate distance traveled in x and y
-            x = cos( th ) * d
-            y = -sin( th ) * d
+            #x = cos( th ) * d
+            #y = -sin( th ) * d
             # calculate the final position of the robot
-            self.x = self.x + ( cos( self.th ) * x - sin( self.th ) * y )
-            self.y = self.y + ( sin( self.th ) * x + cos( self.th ) * y )
+            #self.x = self.x + ( cos( self.th ) * x - sin( self.th ) * y )
+            #self.y = self.y + ( sin( self.th ) * x + cos( self.th ) * y )
+            self.x = self.x + d * cos(self.th)
+            self.y = self.y + d * sin(self.th)
         if( th != 0):
             self.th = self.th + th
                 
